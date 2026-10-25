@@ -1,0 +1,34 @@
+#!/usr/local/bin/nu
+# Open URLs or files as tabs in the s6-supervised desktop Chromium, via CDP.
+
+const CDP = "http://127.0.0.1:9222"
+
+def wait-for-cdp [] {
+  for _ in 1..150 {
+    if (try { http get $"($CDP)/json/version" | ignore; true } catch { false }) { return }
+    sleep 200ms
+  }
+  error make {msg: $"desktop Chromium is not answering on ($CDP); check `s6-svstat /run/service/chromium` and /var/log/agents-zoo/chromium"}
+}
+
+def raise-window [] {
+  let found = (^xdotool search --onlyvisible --class '^chromium$' | complete)
+  let wins = ($found.stdout | lines)
+  if ($wins | is-not-empty) {
+    ^xdotool windowactivate ($wins | last) | complete | ignore
+  }
+}
+
+def main [...targets: string] {
+  wait-for-cdp
+  for target in $targets {
+    let url = if ($target =~ '^[a-zA-Z][a-zA-Z0-9+.-]*:') {
+      $target
+    } else {
+      $"file://($target | path expand)"
+    }
+    let tab = (http put $"($CDP)/json/new?($url)" "")
+    http get $"($CDP)/json/activate/($tab.id)" | ignore
+  }
+  raise-window
+}

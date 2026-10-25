@@ -1,0 +1,5 @@
+[Default Applications]
+text/html=desktop-chromium.desktop
+application/xhtml+xml=desktop-chromium.desktop
+x-scheme-handler/http=desktop-chromium.desktop
+x-scheme-handler/https=desktop-chromium.desktop

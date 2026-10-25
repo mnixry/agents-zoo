@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Task Manager
+Icon=org.xfce.taskmanager
+Exec=xfce4-taskmanager
+Terminal=false
+StartupNotify=false

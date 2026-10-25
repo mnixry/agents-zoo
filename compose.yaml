@@ -1,0 +1,19 @@
+services:
+  agents-zoo:
+    build: .
+    image: agents-zoo:latest
+    hostname: agents-zoo
+    ports:
+      - "127.0.0.1:6901:6901"
+    volumes:
+      - agent-home:/home/agent
+    shm_size: 2gb
+    environment:
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
+      RAFT_SERVER_SLUG: ${RAFT_SERVER_SLUG:-}
+      TZ: ${TZ:-Etc/UTC}
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  agent-home:

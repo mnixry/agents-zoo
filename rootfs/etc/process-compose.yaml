@@ -1,0 +1,95 @@
+version: "0.5"
+log_location: /var/log/agents-zoo/processes.log
+log_configuration:
+  rotation:
+    max_size_mb: 1
+    max_backups: 10
+
+processes:
+  dbus:
+    command: dbus-daemon --session --nofork --nopidfile --address=$DBUS_SESSION_BUS_ADDRESS
+    readiness_probe:
+      exec:
+        command: test -S /run/agent/bus
+      period_seconds: 1
+    availability:
+      restart: always
+
+  xvnc:
+    # -publicIP skips KasmVNC's STUN lookup; UDP is not published.
+    command: >-
+      Xvnc $DISPLAY -auth $XAUTHORITY -nolisten tcp
+      -geometry 1920x1080 -depth 24 -dpi 96 -FrameRate 30
+      -interface 0.0.0.0 -websocketPort 6901 -sslOnly 0 -publicIP 127.0.0.1
+      -httpd /usr/share/kasmvnc/www -SecurityTypes None -AcceptSetDesktopSize 1
+      $XVNC_AUTH
+    readiness_probe:
+      exec:
+        command: xdpyinfo >/dev/null 2>&1
+      period_seconds: 1
+      failure_threshold: 30
+    availability:
+      restart: always
+
+  wm:
+    command: >-
+      xrdb -merge /etc/X11/Xresources/agents-zoo && xsetroot -cursor_name left_ptr && xset s off
+      && exec xfwm4 --compositor=off
+    depends_on:
+      xvnc:
+        condition: process_healthy
+      dbus:
+        condition: process_healthy
+    availability:
+      restart: always
+
+  xsettingsd:
+    command: xsettingsd -c /etc/xsettingsd/xsettingsd.conf
+    depends_on:
+      xvnc:
+        condition: process_healthy
+    availability:
+      restart: always
+
+  wallpaper:
+    # --daemon forks and re-applies the wallpaper on every resize.
+    command: xwallpaper --daemon --zoom /usr/share/backgrounds/agents-zoo.png
+    is_daemon: true
+    shutdown:
+      command: pkill -x xwallpaper
+    depends_on:
+      xvnc:
+        condition: process_healthy
+
+  dock:
+    command: tint2 -c /etc/xdg/tint2/tint2rc
+    depends_on:
+      wm:
+        condition: process_started
+    availability:
+      restart: always
+
+  chromium:
+    # Restarted when the last window closes. CDP is for Playwright MCP.
+    command: >-
+      chromium --user-data-dir=$HOME/.config/desktop-chromium
+      --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222
+      --no-first-run --no-default-browser-check --start-maximized --test-type
+      about:blank
+    depends_on:
+      wm:
+        condition: process_started
+      dbus:
+        condition: process_healthy
+      xsettingsd:
+        condition: process_started
+    availability:
+      restart: always
+
+  raft-computer:
+    command: nu /usr/local/lib/agents-zoo/raft.nu
+    depends_on:
+      xvnc:
+        condition: process_healthy
+    availability:
+      restart: on_failure

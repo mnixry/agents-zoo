@@ -1,0 +1,53 @@
+#!/usr/local/bin/nu
+# Entrypoint under tini: per-boot setup as root, then process-compose as agent.
+
+let agent = (
+  open /etc/passwd | lines
+  | parse "{name}:{pw}:{uid}:{gid}:{gecos}:{home}:{shell}"
+  | where name == "agent" | first
+)
+let owner = $"($agent.uid):($agent.gid)"
+let home = $agent.home
+
+# The home volume is seeded and handed over only when empty.
+if (ls --all $home | is-empty) {
+  print $"seeding empty ($home) from /etc/skel"
+  ls --all /etc/skel | each {|f| cp --recursive $f.name $home }
+  ^chown -R $owner $home
+} else if ((^stat -c '%u' $home) != $agent.uid) {
+  print $"($home) is not owned by ($agent.name); leaving it as is"
+}
+
+rm --recursive --force $env.XDG_RUNTIME_DIR
+mkdir $env.XDG_RUNTIME_DIR
+^chown $owner $env.XDG_RUNTIME_DIR
+^chmod 0700 $env.XDG_RUNTIME_DIR
+
+# /tmp and the profile survive container restarts; stale locks block X and Chromium.
+let display = ($env.DISPLAY | str trim --left --char ':')
+rm --force $"/tmp/.X($display)-lock" $"/tmp/.X11-unix/X($display)"
+mkdir /tmp/.X11-unix
+^chmod 1777 /tmp/.X11-unix
+let locks = (glob $"($home)/.config/desktop-chromium/Singleton*")
+if ($locks | is-not-empty) { rm --force ...$locks }
+
+touch $env.XAUTHORITY
+^xauth -q -f $env.XAUTHORITY add $env.DISPLAY . (random binary 16 | encode hex)
+^chown $owner $env.XAUTHORITY
+^chmod 0600 $env.XAUTHORITY
+
+let password = ($env.VNC_PASSWORD? | default "")
+let xvnc_auth = if ($password | is-empty) {
+  "-DisableBasicAuth 1"
+} else {
+  let file = $"($env.XDG_RUNTIME_DIR)/kasmpasswd"
+  $"($password)\n($password)\n" | ^kasmvncpasswd -u $agent.name -w $file | ignore
+  ^chown $owner $file
+  $"-KasmPasswordFile ($file)"
+}
+
+with-env {HOME: $home, USER: $agent.name, LOGNAME: $agent.name, SHELL: "/bin/bash", XVNC_AUTH: $xvnc_auth} {
+  cd $home
+  (exec setpriv --reuid $agent.uid --regid $agent.gid --init-groups
+    process-compose up -f /etc/process-compose.yaml --tui=false --ordered-shutdown --disable-dotenv)
+}

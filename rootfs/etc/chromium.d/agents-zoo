@@ -1,0 +1,3 @@
+# Docker's seccomp blocks Chromium's sandbox. Debian blocks Web Store
+# extensions without --enable-remote-extensions.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-sandbox --enable-remote-extensions"
