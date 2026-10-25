@@ -34,7 +34,7 @@ RUN tar -xzf /process-compose.tar.gz -C /usr/local/bin process-compose
 FROM scratch AS npm-latest
 ADD https://registry.npmjs.org/@anthropic-ai/claude-code/latest /claude-code.json
 ADD https://registry.npmjs.org/@openai/codex/latest /codex.json
-ADD https://registry.npmjs.org/opencode-ai/latest /opencode-ai.json
+ADD https://registry.npmjs.org/@opencode/cli/latest /opencode-cli.json
 ADD https://registry.npmjs.org/@moonshot-ai/kimi-code/latest /kimi-code.json
 ADD https://registry.npmjs.org/mcp-remote/latest /mcp-remote.json
 ADD https://registry.npmjs.org/@playwright/mcp/latest /playwright-mcp.json
@@ -84,15 +84,17 @@ RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=apt-lists,target=/var/lib/apt/lists,sharing=locked \
   apt-get update && apt-get install -y --no-install-recommends nodejs
 
-# npm 11 runs install scripts only for allow-listed packages.
+# Install scripts that matter: claude-code and @opencode/cli link their native
+# binary, pnpm swaps in its native binary, node-pty builds Kimi's terminal addon.
+# npm 11 only warns about unlisted ones (Kimi's legacy-shim migration) for now.
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false PNPM_HOME=/opt/pnpm
 RUN --mount=type=bind,from=npm-latest,target=/mnt/npm-latest \
   --mount=type=cache,id=npm,target=/root/.npm \
   --mount=type=cache,id=node-gyp,target=/root/.cache \
   --mount=type=tmpfs,target=/tmp \
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --global --no-audit \
-  --allow-scripts=@anthropic-ai/claude-code,@moonshot-ai/kimi-code,opencode-ai,pnpm,node-pty \
-  @anthropic-ai/claude-code @openai/codex opencode-ai @moonshot-ai/kimi-code \
+  --allow-scripts=@anthropic-ai/claude-code,@opencode/cli,pnpm,node-pty \
+  @anthropic-ai/claude-code @openai/codex @opencode/cli @moonshot-ai/kimi-code \
   mcp-remote @playwright/mcp pnpm \
   && rm -rf /root/.config /root/.local \
   && mkdir -p "$PNPM_HOME/bin" && chown -R agent:agent "$PNPM_HOME"
